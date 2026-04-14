@@ -8,7 +8,6 @@ app.use(express.json());
 
 const PORT = process.env.PORT || 3001;
 
-// 🔐 AUTENTICACIÓN
 const auth = new google.auth.GoogleAuth({
   credentials: {
     client_email: process.env.GOOGLE_CLIENT_EMAIL,
@@ -21,13 +20,10 @@ const auth = new google.auth.GoogleAuth({
 
 const sheets = google.sheets({ version: "v4", auth });
 
-// 🔑 ID DEL SHEET
 const SPREADSHEET_ID = process.env.SPREADSHEET_ID;
 
-// 🔧 NORMALIZAR
 const normalizar = (txt) => txt?.toString().toLowerCase().trim();
 
-// 🔒 BLOQUEADOS
 const BLOQUEADOS = [
   "id",
   "nombre",
@@ -41,9 +37,6 @@ const BLOQUEADOS = [
   "vendedor asignado"
 ];
 
-// ==========================
-// GET CLIENTES
-// ==========================
 app.get("/clientes", async (req, res) => {
   try {
     const response = await sheets.spreadsheets.values.get({
@@ -65,14 +58,11 @@ app.get("/clientes", async (req, res) => {
 
     res.json(clientes);
   } catch (error) {
-    console.log("❌ ERROR GET:", error);
+    console.log("ERROR GET:", error);
     res.status(500).send("Error al leer Google Sheets");
   }
 });
 
-// ==========================
-// EDITAR CLIENTE
-// ==========================
 app.post("/editar-cliente", async (req, res) => {
   try {
     let { id, datos } = req.body;
@@ -145,14 +135,11 @@ app.post("/editar-cliente", async (req, res) => {
     res.send("OK");
 
   } catch (error) {
-    console.log("❌ ERROR EDITANDO:", error);
+    console.log("ERROR EDITANDO:", error);
     res.status(500).send("Error al guardar");
   }
 });
 
-// ==========================
-// SERVER
-// ==========================
 app.listen(PORT, () => {
-  console.log("🚀 Servidor corriendo en puerto " + PORT);
+  console.log("Servidor corriendo en puerto " + PORT);
 });
