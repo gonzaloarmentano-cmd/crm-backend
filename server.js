@@ -22,6 +22,12 @@ const sheets = google.sheets({ version: "v4", auth });
 
 const SPREADSHEET_ID = process.env.SPREADSHEET_ID;
 
+// 🔍 DEBUG (AGREGÁ ESTO)
+console.log("ENV VARIABLES:");
+console.log("SPREADSHEET_ID:", process.env.SPREADSHEET_ID);
+console.log("EMAIL:", process.env.GOOGLE_CLIENT_EMAIL);
+console.log("KEY OK:", !!process.env.GOOGLE_PRIVATE_KEY);
+
 const normalizar = (txt) => txt?.toString().toLowerCase().trim();
 
 const BLOQUEADOS = [
