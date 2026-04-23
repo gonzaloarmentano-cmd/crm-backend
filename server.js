@@ -35,6 +35,8 @@ const BLOQUEADOS = [
   "nombre",
   "fecha ult. actualizacion deuda",
   "fecha ult. pedido",
+  "clima",
+  "deuda actualizada al",
   "deuda total",
   "deuda p1",
   "deuda p2",
