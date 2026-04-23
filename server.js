@@ -112,10 +112,15 @@ app.post("/editar-cliente", async (req, res) => {
       const headerNorm = normalizar(header);
 
       if (!BLOQUEADOS.includes(headerNorm)) {
-        if (datos[header] !== undefined) {
-          nuevaFila[colIndex] = datos[header];
-        }
-      }
+  if (datos[header] !== undefined) {
+    nuevaFila[colIndex] = datos[header];
+  }
+}
+
+// 🔥 FORZAR UPDATE DE FECHA SI VIENE
+if (headerNorm === "fecha info. agregada" && datos["FECHA INFO. AGREGADA"]) {
+  nuevaFila[colIndex] = datos["FECHA INFO. AGREGADA"];
+}
     });
 
     const getColumnLetter = (index) => {
@@ -127,16 +132,36 @@ app.post("/editar-cliente", async (req, res) => {
       return letter;
     };
 
-    const lastColumn = getColumnLetter(headers.length - 1);
+const updates = [];
 
-    await sheets.spreadsheets.values.update({
-      spreadsheetId: SPREADSHEET_ID,
-      range: `DATOS!A${filaReal}:${lastColumn}${filaReal}`,
-      valueInputOption: "USER_ENTERED",
-      resource: {
-        values: [nuevaFila],
-      },
-    });
+headers.forEach((header, colIndex) => {
+  const headerNorm = normalizar(header);
+
+  // ❌ no tocar bloqueados
+  if (BLOQUEADOS.includes(headerNorm)) return;
+
+  // ❌ si no viene dato, no hacer nada
+  if (datos[header] === undefined) return;
+
+  // ✅ armar update individual
+  const colLetter = getColumnLetter(colIndex);
+
+  updates.push({
+    range: `DATOS!${colLetter}${filaReal}`,
+    values: [[datos[header]]]
+  });
+});
+
+// 🔥 ejecutar todos los updates
+if (updates.length > 0) {
+  await sheets.spreadsheets.values.batchUpdate({
+    spreadsheetId: SPREADSHEET_ID,
+    resource: {
+      data: updates,
+      valueInputOption: "USER_ENTERED"
+    }
+  });
+}
 
     res.send("OK");
 
