@@ -29,8 +29,11 @@ const BLOQUEADOS = [
   "localidad", "provincia", "vendedor asignado"
 ];
 
-// 🟢 RUTA PARA TRAER CLIENTES
+// 🟢 RUTA PARA TRAER CLIENTES (MODIFICADA)
 app.get("/clientes", async (req, res) => {
+  // 👉 AGREGA ESTA LÍNEA para que el navegador no guarde los datos de ayer
+  res.set('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+
   try {
     const response = await sheets.spreadsheets.values.get({
       spreadsheetId: SPREADSHEET_ID,
