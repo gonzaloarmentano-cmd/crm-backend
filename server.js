@@ -172,8 +172,13 @@ headers.forEach((header, colIndex) => {
       const headerNorm = normalizar(header);
       if (BLOQUEADOS.includes(headerNorm)) return;
       
-      // Buscar el valor tanto en minúsculas como con el nombre exacto enviado
-      const valorDato = datos[header] !== undefined ? datos[header] : datos[headerNorm];
+      // Buscar coincidencia en cabecera exacta, minúsculas o variaciones de capitalización
+      let valorDato = undefined;
+      if (datos[header] !== undefined) valorDato = datos[header];
+      else if (datos[headerNorm] !== undefined) valorDato = datos[headerNorm];
+      else if (datos["Avisos"] !== undefined && headerNorm === "avisos") valorDato = datos["Avisos"];
+      else if (datos["avisos"] !== undefined && headerNorm === "avisos") valorDato = datos["avisos"];
+
       if (valorDato === undefined) return;
 
       const getColumnLetter = (index) => {
