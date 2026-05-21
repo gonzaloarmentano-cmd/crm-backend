@@ -168,10 +168,13 @@ app.post("/editar-cliente", async (req, res) => {
     const filaReal = filaIndex + 2;
     const updates = [];
 
-    headers.forEach((header, colIndex) => {
+headers.forEach((header, colIndex) => {
       const headerNorm = normalizar(header);
       if (BLOQUEADOS.includes(headerNorm)) return;
-      if (datos[header] === undefined) return;
+      
+      // Buscar el valor tanto en minúsculas como con el nombre exacto enviado
+      const valorDato = datos[header] !== undefined ? datos[header] : datos[headerNorm];
+      if (valorDato === undefined) return;
 
       const getColumnLetter = (index) => {
         let letter = "";
@@ -184,7 +187,7 @@ app.post("/editar-cliente", async (req, res) => {
 
       updates.push({
         range: `DATOS!${getColumnLetter(colIndex)}${filaReal}`,
-        values: [[datos[header]]]
+        values: [[valorDato]]
       });
     });
 
