@@ -118,6 +118,42 @@ app.post("/editar-cliente", async (req, res) => {
       return res.send("Avisos Clientes Reseteados");
     }
 
+    // --- LÓGICA PARA RESTAURAR RECLAMOS DE CLIENTES ---
+    if (id === "RESTAURAR_RECLAMOS_CLIENTES") {
+      const response = await sheets.spreadsheets.values.get({
+        spreadsheetId: SPREADSHEET_ID,
+        range: "DATOS!A1:Z",
+      });
+      const rows = response.data.values || [];
+      const headers = rows[0];
+      const colReclamosIdx = headers.findIndex(h => normalizar(h) === "reclamo");
+      
+      if (colReclamosIdx !== -1) {
+        const getColumnLetter = (index) => {
+          let letter = "";
+          while (index >= 0) {
+            letter = String.fromCharCode((index % 26) + 65) + letter;
+            index = Math.floor(index / 26) - 1;
+          }
+          return letter;
+        };
+        const letraColumna = getColumnLetter(colReclamosIdx);
+        
+        const updates = rows.slice(1).map((_, idx) => ({
+          range: `DATOS!${letraColumna}${idx + 2}`,
+          values: [["FALSE"]]
+        }));
+
+        if (updates.length > 0) {
+          await sheets.spreadsheets.values.batchUpdate({
+            spreadsheetId: SPREADSHEET_ID,
+            resource: { data: updates, valueInputOption: "USER_ENTERED" }
+          });
+        }
+      }
+      return res.send("Reclamos Clientes Reseteados");
+    }
+
     // --- LÓGICA PARA NUEVO RECORDATORIO ---
     if (id === "NUEVO_RECORDATORIO") {
       await sheets.spreadsheets.values.append({
@@ -173,11 +209,13 @@ headers.forEach((header, colIndex) => {
       if (BLOQUEADOS.includes(headerNorm)) return;
       
       // Buscar coincidencia en cabecera exacta, minúsculas o variaciones de capitalización
-      let valorDato = undefined;
+let valorDato = undefined;
       if (datos[header] !== undefined) valorDato = datos[header];
       else if (datos[headerNorm] !== undefined) valorDato = datos[headerNorm];
       else if (datos["Avisos"] !== undefined && headerNorm === "avisos") valorDato = datos["Avisos"];
       else if (datos["avisos"] !== undefined && headerNorm === "avisos") valorDato = datos["avisos"];
+      else if (datos["RECLAMO"] !== undefined && headerNorm === "reclamo") valorDato = datos["RECLAMO"];
+      else if (datos["reclamo"] !== undefined && headerNorm === "reclamo") valorDato = datos["reclamo"];
 
       if (valorDato === undefined) return;
 
