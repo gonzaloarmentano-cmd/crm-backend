@@ -248,6 +248,89 @@ let valorDato = undefined;
   }
 });
 
+// ─── HORARIOS ────────────────────────────────────────────────────────────────
+
+const COLS_HORARIOS = ["id", "semana", "dia", "hora", "usuario", "actividad"];
+
+app.get("/horarios", async (req, res) => {
+  const { semana } = req.query;
+  try {
+    const response = await sheets.spreadsheets.values.get({
+      spreadsheetId: SPREADSHEET_ID,
+      range: "HORARIOS!A1:F",
+    });
+    const rows = response.data.values || [];
+    if (rows.length <= 1) return res.json({ horarios: [] });
+    const horarios = rows.slice(1)
+      .filter(row => !semana || row[1] === semana)
+      .map(row => {
+        const obj = {};
+        COLS_HORARIOS.forEach((col, i) => { obj[col] = row[i] || ""; });
+        return obj;
+      });
+    res.json({ horarios });
+  } catch (err) {
+    console.error("GET /horarios error:", err);
+    res.status(500).send("Error leyendo horarios");
+  }
+});
+
+app.post("/horarios", async (req, res) => {
+  const { semana, dia, hora, usuario, actividad } = req.body;
+  try {
+    const response = await sheets.spreadsheets.values.get({
+      spreadsheetId: SPREADSHEET_ID,
+      range: "HORARIOS!A1:F",
+    });
+    const rows = response.data.values || [];
+
+    // Asegurar encabezados
+    if (rows.length === 0 || !rows[0][0]) {
+      await sheets.spreadsheets.values.update({
+        spreadsheetId: SPREADSHEET_ID,
+        range: "HORARIOS!A1:F1",
+        valueInputOption: "USER_ENTERED",
+        resource: { values: [COLS_HORARIOS] },
+      });
+    }
+
+    // Buscar fila existente
+    const filaIdx = rows.findIndex((row, i) =>
+      i > 0 && row[1] === semana && row[2] === dia && row[3] === hora && row[4] === usuario
+    );
+
+    if (filaIdx !== -1) {
+      if (!actividad || actividad.trim() === "") {
+        // Borrar contenido de la fila (dejar vacía)
+        await sheets.spreadsheets.values.clear({
+          spreadsheetId: SPREADSHEET_ID,
+          range: `HORARIOS!A${filaIdx + 1}:F${filaIdx + 1}`,
+        });
+      } else {
+        await sheets.spreadsheets.values.update({
+          spreadsheetId: SPREADSHEET_ID,
+          range: `HORARIOS!F${filaIdx + 1}`,
+          valueInputOption: "USER_ENTERED",
+          resource: { values: [[actividad]] },
+        });
+      }
+    } else if (actividad && actividad.trim() !== "") {
+      const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
+      await sheets.spreadsheets.values.append({
+        spreadsheetId: SPREADSHEET_ID,
+        range: "HORARIOS!A1",
+        valueInputOption: "USER_ENTERED",
+        resource: { values: [[id, semana, dia, hora, usuario, actividad]] },
+      });
+    }
+
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("POST /horarios error:", err);
+    res.status(500).send("Error guardando horario");
+  }
+});
+
 app.listen(PORT, () => {
   console.log("Servidor corriendo en puerto " + PORT);
 });
