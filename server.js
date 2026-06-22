@@ -331,6 +331,124 @@ app.post("/horarios", async (req, res) => {
   }
 });
 
+// ─── CHECKLIST / TAREAS ──────────────────────────────────────────────────────
+
+const COLS_CHECKLIST = ["id", "usuario", "texto", "hecha", "creado_por", "fecha"];
+
+async function getSheetId(title) {
+  const meta = await sheets.spreadsheets.get({ spreadsheetId: SPREADSHEET_ID });
+  const sheet = (meta.data.sheets || []).find((s) => s.properties.title === title);
+  return sheet ? sheet.properties.sheetId : null;
+}
+
+app.get("/checklist", async (req, res) => {
+  res.set("Cache-Control", "no-store, no-cache, must-revalidate, private");
+  try {
+    const response = await sheets.spreadsheets.values.get({
+      spreadsheetId: SPREADSHEET_ID,
+      range: "CHECKLIST!A1:F",
+    });
+    const rows = response.data.values || [];
+    if (rows.length <= 1) return res.json({ tareas: [] });
+    const tareas = rows
+      .slice(1)
+      .filter((row) => row[0] && row[2]) // tiene id y texto
+      .map((row) => {
+        const obj = {};
+        COLS_CHECKLIST.forEach((col, i) => { obj[col] = row[i] || ""; });
+        return obj;
+      });
+    res.json({ tareas });
+  } catch (err) {
+    console.error("GET /checklist error:", err);
+    res.status(500).send("Error leyendo checklist");
+  }
+});
+
+app.post("/checklist", async (req, res) => {
+  const { action } = req.body;
+  try {
+    const response = await sheets.spreadsheets.values.get({
+      spreadsheetId: SPREADSHEET_ID,
+      range: "CHECKLIST!A1:F",
+    });
+    const rows = response.data.values || [];
+
+    // Asegurar encabezados
+    if (rows.length === 0 || !rows[0][0]) {
+      await sheets.spreadsheets.values.update({
+        spreadsheetId: SPREADSHEET_ID,
+        range: "CHECKLIST!A1:F1",
+        valueInputOption: "USER_ENTERED",
+        resource: { values: [COLS_CHECKLIST] },
+      });
+    }
+
+    if (action === "crear") {
+      const { usuario, texto, creado_por } = req.body;
+      const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
+      const fecha = new Date().toLocaleDateString("es-AR");
+      await sheets.spreadsheets.values.append({
+        spreadsheetId: SPREADSHEET_ID,
+        range: "CHECKLIST!A1",
+        valueInputOption: "USER_ENTERED",
+        resource: { values: [[id, usuario, texto, "FALSE", creado_por || usuario, fecha]] },
+      });
+      return res.json({ ok: true, id });
+    }
+
+    if (action === "toggle") {
+      const { id, hecha } = req.body;
+      const filaIdx = rows.findIndex((row, i) => i > 0 && row[0] === id);
+      if (filaIdx !== -1) {
+        await sheets.spreadsheets.values.update({
+          spreadsheetId: SPREADSHEET_ID,
+          range: `CHECKLIST!D${filaIdx + 1}`,
+          valueInputOption: "USER_ENTERED",
+          resource: { values: [[hecha ? "TRUE" : "FALSE"]] },
+        });
+      }
+      return res.json({ ok: true });
+    }
+
+    if (action === "borrar" || action === "borrar_completadas") {
+      const sheetId = await getSheetId("CHECKLIST");
+      let filasABorrar = [];
+      if (action === "borrar") {
+        const { id } = req.body;
+        const idx = rows.findIndex((row, i) => i > 0 && row[0] === id);
+        if (idx !== -1) filasABorrar.push(idx);
+      } else {
+        const { usuario } = req.body;
+        rows.forEach((row, i) => {
+          if (i > 0 && row[0] && row[3] === "TRUE" && (!usuario || row[1] === usuario)) {
+            filasABorrar.push(i);
+          }
+        });
+      }
+      // Borrar de abajo hacia arriba para no desfasar índices
+      filasABorrar.sort((a, b) => b - a);
+      const requests = filasABorrar.map((idx) => ({
+        deleteDimension: {
+          range: { sheetId, dimension: "ROWS", startIndex: idx, endIndex: idx + 1 },
+        },
+      }));
+      if (requests.length > 0 && sheetId != null) {
+        await sheets.spreadsheets.batchUpdate({
+          spreadsheetId: SPREADSHEET_ID,
+          resource: { requests },
+        });
+      }
+      return res.json({ ok: true, borradas: requests.length });
+    }
+
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("POST /checklist error:", err);
+    res.status(500).send("Error guardando checklist");
+  }
+});
+
 app.listen(PORT, () => {
   console.log("Servidor corriendo en puerto " + PORT);
 });
