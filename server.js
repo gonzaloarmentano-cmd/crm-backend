@@ -23,6 +23,15 @@ const SPREADSHEET_ID = process.env.SPREADSHEET_ID;
 
 const normalizar = (txt) => txt?.toString().toLowerCase().trim();
 
+function colLetter(index) {
+  let letter = "";
+  while (index >= 0) {
+    letter = String.fromCharCode((index % 26) + 65) + letter;
+    index = Math.floor(index / 26) - 1;
+  }
+  return letter;
+}
+
 const BLOQUEADOS = [
   "id", "nombre", "fecha ult. actualizacion deuda", "fecha ult. pedido", 
   "clima", "deuda actualizada al", "deuda total", "deuda p1", "deuda p2", 
@@ -446,6 +455,145 @@ app.post("/checklist", async (req, res) => {
   } catch (err) {
     console.error("POST /checklist error:", err);
     res.status(500).send("Error guardando checklist");
+  }
+});
+
+// ─── CONTACTOS ───────────────────────────────────────────────────────────────
+// Tab "Contactos": A id | B fecha | C nombre | D localidad | E provincia |
+// F mail | G telefono | H marcas | I fecha contacto | J vendedor |
+// K Z(oculto) | L Agregar info. | M Info. agregada: | N Avisos
+
+app.get("/contactos", async (req, res) => {
+  res.set("Cache-Control", "no-store, no-cache, must-revalidate, private");
+  try {
+    const response = await sheets.spreadsheets.values.get({
+      spreadsheetId: SPREADSHEET_ID,
+      range: "Contactos!A1:N",
+    });
+    const rows = response.data.values || [];
+    if (rows.length <= 1) return res.json([]);
+    const headers = rows[0];
+    const idxVendedor = headers.indexOf("Vendedor Asignado");
+    const idxOculto = headers.indexOf("Z");
+    const idxTexto = headers.indexOf("Agregar info.");
+    const idxFechaInfo = headers.indexOf("Info. agregada:");
+    const idxAvisos = headers.indexOf("Avisos");
+
+    const contactos = rows.slice(1).filter((r) => r[0]).map((row) => ({
+      id: row[0], nombre: row[2] || "", localidad: row[3] || "", provincia: row[4] || "",
+      mail: row[5] || "", telefono: row[6] || "", marcas: row[7] || "",
+      fecha: row[8] || "",
+      vendedor: idxVendedor !== -1 ? String(row[idxVendedor] || "").trim() : "",
+      oculto: idxOculto !== -1 ? (row[idxOculto] === "TRUE" || row[idxOculto] === true) : false,
+      info: idxTexto !== -1 ? (row[idxTexto] || "") : "",
+      fechaInfo: idxFechaInfo !== -1 ? (row[idxFechaInfo] || "") : "",
+      Avisos: idxAvisos !== -1 ? String(row[idxAvisos] || "FALSE").trim().toUpperCase() : "FALSE",
+      tipo: "contacto",
+    }));
+    res.json(contactos);
+  } catch (err) {
+    console.error("GET /contactos error:", err);
+    res.status(500).send("Error leyendo contactos");
+  }
+});
+
+app.post("/contactos", async (req, res) => {
+  const { action } = req.body;
+  try {
+    // CREAR
+    if (action === "crear") {
+      const { nombre, localidad, provincia, mail, telefono, marcas, fecha, vendedor, oculto } = req.body;
+      const id = Date.now().toString(36) + "_contacto";
+      const ocultoVal = (oculto === true || oculto === "true" || oculto === "TRUE") ? "TRUE" : "FALSE";
+      await sheets.spreadsheets.values.append({
+        spreadsheetId: SPREADSHEET_ID,
+        range: "Contactos!A1",
+        valueInputOption: "USER_ENTERED",
+        resource: {
+          values: [[id, new Date().toLocaleDateString("es-AR"), nombre, localidad, provincia,
+            mail, telefono, marcas, fecha, vendedor, ocultoVal, "", "", "FALSE"]],
+        },
+      });
+      return res.json({ ok: true, id });
+    }
+
+    const response = await sheets.spreadsheets.values.get({
+      spreadsheetId: SPREADSHEET_ID,
+      range: "Contactos!A1:N",
+    });
+    const rows = response.data.values || [];
+    const headers = rows[0] || [];
+    const idxOculto = headers.indexOf("Z");
+    const idxTexto = headers.indexOf("Agregar info.");
+    const idxFechaInfo = headers.indexOf("Info. agregada:");
+    const idxAvisos = headers.indexOf("Avisos");
+    const filaIdx = rows.findIndex((row, i) => i > 0 && String(row[0]).trim() === String(req.body.id).trim());
+
+    // ELIMINAR
+    if (action === "eliminar") {
+      const sheetId = await getSheetId("Contactos");
+      if (filaIdx > 0 && sheetId != null) {
+        await sheets.spreadsheets.batchUpdate({
+          spreadsheetId: SPREADSHEET_ID,
+          resource: {
+            requests: [{ deleteDimension: { range: { sheetId, dimension: "ROWS", startIndex: filaIdx, endIndex: filaIdx + 1 } } }],
+          },
+        });
+      }
+      return res.json({ ok: true });
+    }
+
+    if (filaIdx === -1) return res.json({ ok: false, error: "no_encontrado" });
+    const fila = filaIdx + 1; // número de fila en A1
+
+    // OCULTAR
+    if (action === "ocultar") {
+      const col = colLetter(idxOculto !== -1 ? idxOculto : 10);
+      const ocultoVal = (req.body.oculto === true || req.body.oculto === "true" || req.body.oculto === "TRUE") ? "TRUE" : "FALSE";
+      await sheets.spreadsheets.values.update({
+        spreadsheetId: SPREADSHEET_ID,
+        range: `Contactos!${col}${fila}`,
+        valueInputOption: "USER_ENTERED",
+        resource: { values: [[ocultoVal]] },
+      });
+      return res.json({ ok: true });
+    }
+
+    // AGREGAR INFO / AVISOS
+    if (action === "agregar_info") {
+      const updates = [];
+      if (req.body.avisos !== undefined && idxAvisos !== -1)
+        updates.push({ range: `Contactos!${colLetter(idxAvisos)}${fila}`, values: [[String(req.body.avisos).toUpperCase()]] });
+      if (req.body.info !== undefined)
+        updates.push({ range: `Contactos!${colLetter(idxTexto !== -1 ? idxTexto : 11)}${fila}`, values: [[req.body.info]] });
+      if (req.body.fechaInfo)
+        updates.push({ range: `Contactos!${colLetter(idxFechaInfo !== -1 ? idxFechaInfo : 12)}${fila}`, values: [[req.body.fechaInfo]] });
+      if (updates.length)
+        await sheets.spreadsheets.values.batchUpdate({ spreadsheetId: SPREADSHEET_ID, resource: { data: updates, valueInputOption: "USER_ENTERED" } });
+      return res.json({ ok: true });
+    }
+
+    // EDITAR
+    if (action === "editar") {
+      let d = req.body.datos || {};
+      if (typeof d === "string") { try { d = JSON.parse(d); } catch (e) { d = {}; } }
+      const updates = [
+        { range: `Contactos!C${fila}`, values: [[d.NOMBRE || d.nombre || ""]] },
+        { range: `Contactos!D${fila}`, values: [[d.LOCALIDAD || d.localidad || ""]] },
+        { range: `Contactos!E${fila}`, values: [[d.PROVINCIA || d.provincia || ""]] },
+        { range: `Contactos!F${fila}`, values: [[d.mail || ""]] },
+        { range: `Contactos!G${fila}`, values: [[d.telefono || ""]] },
+        { range: `Contactos!H${fila}`, values: [[d.marcas || ""]] },
+        { range: `Contactos!J${fila}`, values: [[d["VENDEDOR ASIGNADO"] || d.vendedor || ""]] },
+      ];
+      await sheets.spreadsheets.values.batchUpdate({ spreadsheetId: SPREADSHEET_ID, resource: { data: updates, valueInputOption: "USER_ENTERED" } });
+      return res.json({ ok: true });
+    }
+
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("POST /contactos error:", err);
+    res.status(500).send("Error guardando contacto");
   }
 });
 
