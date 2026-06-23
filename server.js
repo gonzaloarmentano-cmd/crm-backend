@@ -395,7 +395,7 @@ app.post("/checklist", async (req, res) => {
 
     if (action === "crear") {
       const { usuario, texto, creado_por } = req.body;
-      const id = Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
+      const id = req.body.id || (Date.now().toString(36) + Math.random().toString(36).slice(2, 5));
       const fecha = new Date().toLocaleDateString("es-AR");
       await sheets.spreadsheets.values.append({
         spreadsheetId: SPREADSHEET_ID,
