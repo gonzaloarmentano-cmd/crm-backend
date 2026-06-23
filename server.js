@@ -527,6 +527,23 @@ app.post("/contactos", async (req, res) => {
     const idxTexto = headers.indexOf("Agregar info.");
     const idxFechaInfo = headers.indexOf("Info. agregada:");
     const idxAvisos = headers.indexOf("Avisos");
+
+    // RESTAURAR AVISOS (todos los contactos a FALSE)
+    if (action === "restaurar_avisos") {
+      if (idxAvisos !== -1 && rows.length > 1) {
+        const col = colLetter(idxAvisos);
+        const updates = rows.slice(1).map((_, idx) => ({
+          range: `Contactos!${col}${idx + 2}`,
+          values: [["FALSE"]],
+        }));
+        await sheets.spreadsheets.values.batchUpdate({
+          spreadsheetId: SPREADSHEET_ID,
+          resource: { data: updates, valueInputOption: "USER_ENTERED" },
+        });
+      }
+      return res.json({ ok: true });
+    }
+
     const filaIdx = rows.findIndex((row, i) => i > 0 && String(row[0]).trim() === String(req.body.id).trim());
 
     // ELIMINAR
