@@ -468,7 +468,7 @@ app.get("/contactos", async (req, res) => {
   try {
     const response = await sheets.spreadsheets.values.get({
       spreadsheetId: SPREADSHEET_ID,
-      range: "Contactos!A1:N",
+      range: "Contactos!A1:Z",
     });
     const rows = response.data.values || [];
     if (rows.length <= 1) return res.json([]);
@@ -478,6 +478,7 @@ app.get("/contactos", async (req, res) => {
     const idxTexto = headers.indexOf("Agregar info.");
     const idxFechaInfo = headers.indexOf("Info. agregada:");
     const idxAvisos = headers.indexOf("Avisos");
+    const idxTemporada = headers.indexOf("TEMPORADA");
 
     const contactos = rows.slice(1).filter((r) => r[0]).map((row) => ({
       id: row[0], nombre: row[2] || "", localidad: row[3] || "", provincia: row[4] || "",
@@ -488,6 +489,7 @@ app.get("/contactos", async (req, res) => {
       info: idxTexto !== -1 ? (row[idxTexto] || "") : "",
       fechaInfo: idxFechaInfo !== -1 ? (row[idxFechaInfo] || "") : "",
       Avisos: idxAvisos !== -1 ? String(row[idxAvisos] || "FALSE").trim().toUpperCase() : "FALSE",
+      temporada: idxTemporada !== -1 ? (row[idxTemporada] === "TRUE" || row[idxTemporada] === true) : false,
       tipo: "contacto",
     }));
     res.json(contactos);
@@ -519,7 +521,7 @@ app.post("/contactos", async (req, res) => {
 
     const response = await sheets.spreadsheets.values.get({
       spreadsheetId: SPREADSHEET_ID,
-      range: "Contactos!A1:N",
+      range: "Contactos!A1:Z",
     });
     const rows = response.data.values || [];
     const headers = rows[0] || [];
@@ -527,6 +529,7 @@ app.post("/contactos", async (req, res) => {
     const idxTexto = headers.indexOf("Agregar info.");
     const idxFechaInfo = headers.indexOf("Info. agregada:");
     const idxAvisos = headers.indexOf("Avisos");
+    const idxTemporada = headers.indexOf("TEMPORADA");
 
     // RESTAURAR AVISOS (todos los contactos a FALSE)
     if (action === "restaurar_avisos") {
@@ -562,6 +565,20 @@ app.post("/contactos", async (req, res) => {
 
     if (filaIdx === -1) return res.json({ ok: false, error: "no_encontrado" });
     const fila = filaIdx + 1; // número de fila en A1
+
+    // TEMPORADA (pidió temporada?)
+    if (action === "temporada") {
+      if (idxTemporada !== -1) {
+        const val = (req.body.temporada === true || req.body.temporada === "true" || req.body.temporada === "TRUE") ? "TRUE" : "FALSE";
+        await sheets.spreadsheets.values.update({
+          spreadsheetId: SPREADSHEET_ID,
+          range: `Contactos!${colLetter(idxTemporada)}${fila}`,
+          valueInputOption: "USER_ENTERED",
+          resource: { values: [[val]] },
+        });
+      }
+      return res.json({ ok: true });
+    }
 
     // OCULTAR
     if (action === "ocultar") {
