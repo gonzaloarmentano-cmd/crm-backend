@@ -136,8 +136,9 @@ app.post("/editar-cliente", async (req, res) => {
       const rows = response.data.values || [];
       const headers = rows[0];
       const colReclamosIdx = headers.findIndex(h => normalizar(h) === "reclamo");
-      
-      if (colReclamosIdx !== -1) {
+      const colDeudaTotalIdx = headers.findIndex(h => normalizar(h) === "deuda total");
+
+      if (colReclamosIdx !== -1 && colDeudaTotalIdx !== -1) {
         const getColumnLetter = (index) => {
           let letter = "";
           while (index >= 0) {
@@ -147,11 +148,25 @@ app.post("/editar-cliente", async (req, res) => {
           return letter;
         };
         const letraColumna = getColumnLetter(colReclamosIdx);
-        
-        const updates = rows.slice(1).map((_, idx) => ({
-          range: `DATOS!${letraColumna}${idx + 2}`,
-          values: [["FALSE"]]
-        }));
+
+        // Solo se resetea (TRUE -> FALSE) el RECLAMO de los clientes cuya
+        // DEUDA TOTAL sea mayor a 0. Si no tienen deuda, se dejan como están.
+        const parseDeuda = (val) => {
+          const raw = (val || "0").toString()
+            .replace(/\$/g, "")
+            .replace(/\s/g, "")
+            .replace(/\./g, "")
+            .replace(",", ".");
+          return Number(raw) || 0;
+        };
+
+        const updates = rows.slice(1)
+          .map((row, idx) => ({ deuda: parseDeuda(row[colDeudaTotalIdx]), idx }))
+          .filter(({ deuda }) => deuda > 0)
+          .map(({ idx }) => ({
+            range: `DATOS!${letraColumna}${idx + 2}`,
+            values: [["FALSE"]]
+          }));
 
         if (updates.length > 0) {
           await sheets.spreadsheets.values.batchUpdate({
@@ -160,7 +175,7 @@ app.post("/editar-cliente", async (req, res) => {
           });
         }
       }
-      return res.send("Reclamos Clientes Reseteados");
+      return res.send("Reclamos Clientes Reseteados (solo clientes con deuda > 0)");
     }
 
     // --- LÓGICA PARA NUEVO RECORDATORIO ---
