@@ -477,6 +477,9 @@ function enviarMailsDeudas(opciones) {
       problemas.push(nombre + " (sin mail)");
       continue;
     }
+    if (crm && opciones.testRecipient && email.toLowerCase() !== opciones.testRecipient) {
+      throw new Error("El destinatario no está habilitado para pruebas.");
+    }
     if (!regexMail.test(email)) {
       problemas.push(nombre + " (" + email + ") - Mail inválido");
       continue;
@@ -590,7 +593,7 @@ function enviarMailsDeudas(opciones) {
 
 // Puente privado para el servidor del CRM. Se agrega al proyecto de BASE CRM.
 // CRM_MAIL_SCRIPT_KEY se configura en Propiedades del script y en Render.
-function doPost(e) {
+function crmCommunicationsDoPost_(e) {
   const json = value => ContentService.createTextOutput(JSON.stringify(value)).setMimeType(ContentService.MimeType.JSON);
   try {
     const envelope = JSON.parse(e.postData.contents);
@@ -620,6 +623,14 @@ function doPost(e) {
       });
       return json({ ok: true, clients: clients });
     }
+    const testRecipient = (props_().getProperty("CRM_MAIL_TEST_RECIPIENT") || "").trim().toLowerCase();
+    if (testRecipient && request.action === "send" && !request.clientId) {
+      throw new Error("El envío masivo está deshabilitado durante las pruebas.");
+    }
+    if (testRecipient && request.action === "cart-mail" && request.email !== testRecipient) {
+      throw new Error("El destinatario no está habilitado para pruebas.");
+    }
+    if (request.action === "cart-mail") return json(enviarMailCarritoCRM_(request));
     if (request.action !== "send" || !/^[a-zA-Z0-9-]{16,80}$/.test(request.batchId) ||
         !Number.isInteger(request.cursor) || request.cursor < 1 ||
         (request.clientId !== undefined && (typeof request.clientId !== "string" || !request.clientId.trim()))) {
@@ -653,7 +664,7 @@ function doPost(e) {
       journal.appendRow([requestId, "EN CURSO", "", new Date(), request.staffEmail || ""]);
       const rowNumber = journal.getLastRow();
       SpreadsheetApp.flush();
-      const result = enviarMailsDeudas({ crm: true, clientId: request.clientId, cursor: request.cursor });
+      const result = enviarMailsDeudas({ crm: true, clientId: request.clientId, cursor: request.cursor, testRecipient });
       if (!result) throw new Error("No se pudo preparar el envío. Revisá la configuración de BASE CRM.");
       journal.getRange(rowNumber, 2, 1, 2).setValues([["COMPLETADO", JSON.stringify(result)]]);
       SpreadsheetApp.flush();
@@ -663,5 +674,52 @@ function doPost(e) {
     }
   } catch (error) {
     return json({ ok: false, error: error.message || "No se pudo procesar la solicitud." });
+  }
+}
+
+function enviarMailCarritoCRM_(request) {
+  const { clientId, batchId, email, subject, message, staffEmail } = request;
+  if (typeof clientId !== "string" || !clientId.trim() ||
+      typeof batchId !== "string" || !/^[a-zA-Z0-9-]{16,80}$/.test(batchId) ||
+      typeof email !== "string" || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) ||
+      typeof subject !== "string" || !subject.trim() || subject.length > 150 || /[\r\n]/.test(subject) ||
+      typeof message !== "string" || !message.trim() || message.length > 5000) {
+    throw new Error("Solicitud de carrito inválida.");
+  }
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(1000)) throw new Error("Hay otro envío en curso. Reintentá.");
+  try {
+    const ss = getSpreadsheet_();
+    let journal = ss.getSheetByName("Envios CRM");
+    if (!journal) {
+      journal = ss.insertSheet("Envios CRM");
+      journal.appendRow(["Solicitud", "Estado", "Resultado", "Fecha", "Usuario"]);
+    }
+    const requestId = "carrito:" + batchId + ":" + clientId;
+    const previous = journal.getDataRange().getValues().find(row => row[0] === requestId);
+    if (previous) {
+      if (previous[1] === "COMPLETADO") return JSON.parse(previous[2]);
+      throw new Error("Este envío requiere revisión en Envios CRM antes de repetirse.");
+    }
+    const rows = ss.getSheetByName(NOMBRE_HOJA_DATOS).getDataRange().getValues().slice(1);
+    const matches = rows.filter(row => String(row[0] || "").trim() === clientId);
+    if (matches.length !== 1 || String(matches[0][7] || "").trim().toLowerCase() !== email) {
+      throw new Error("El email del cliente cambió en BASE CRM. Volvé a consultar.");
+    }
+    if (MailApp.getRemainingDailyQuota() <= 0) throw new Error("Se agotó la cuota diaria de envío.");
+    const aliases = GmailApp.getAliases();
+    const sender = props_().getProperty(PROP_ALIAS);
+    const options = { name: "Buddies Mayorista" };
+    if (sender && aliases.includes(sender)) options.from = sender;
+    journal.appendRow([requestId, "EN CURSO", "", new Date(), staffEmail || ""]);
+    const rowNumber = journal.getLastRow();
+    SpreadsheetApp.flush();
+    GmailApp.sendEmail(email, subject, message, options);
+    const result = { ok: true, sentAt: new Date().toISOString() };
+    journal.getRange(rowNumber, 2, 1, 2).setValues([["COMPLETADO", JSON.stringify(result)]]);
+    SpreadsheetApp.flush();
+    return result;
+  } finally {
+    lock.releaseLock();
   }
 }
