@@ -1,10 +1,12 @@
 const express = require("express");
 const { google } = require("googleapis");
 const cors = require("cors");
+const { registerCommunications } = require("./communications");
 
 const app = express();
 app.use(cors());
 app.use(express.json());
+registerCommunications(app);
 
 const PORT = process.env.PORT || 3001;
 
