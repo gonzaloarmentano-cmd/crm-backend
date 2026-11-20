@@ -78,20 +78,52 @@ function registerCommunications(app) {
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 254) {
       return res.status(400).json({ error: "El cliente necesita un email válido." });
     }
-    if (!process.env.SHOWROOM_CART_KEY) return res.status(503).json({ error: "Falta configurar el acceso al showroom." });
     try {
-      const response = await fetch("https://buddies.com.ar/showroom/dev/wp-json/buddies/v1/crm/cart-status", {
-        method: "POST", redirect: "error",
-        headers: { "Content-Type": "application/json", "X-Buddies-CRM-Cart-Key": process.env.SHOWROOM_CART_KEY },
-        body: JSON.stringify({ email }), signal: AbortSignal.timeout(12000),
-      });
-      if (!response.ok) throw new Error();
-      const result = await response.json();
-      if (!["active_cart", "no_active_cart", "account_not_found"].includes(result.status)) throw new Error();
-      res.json({ status: result.status, lastConnection: result.lastConnection || null });
-    } catch {
-      res.status(502).json({ error: "No se pudo comprobar el carrito. Reintentá en unos minutos." });
+      res.json(await lookupCart(email));
+    } catch (error) {
+      res.status(502).json({ error: error.message });
+    }
+  });
+
+  app.post("/comunicaciones/showroom/mail", authorize, async (req, res) => {
+    const { clientId, batchId, subject, message } = req.body || {};
+    const email = typeof req.body?.email === "string" ? req.body.email.trim().toLowerCase() : "";
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 254 ||
+        typeof clientId !== "string" || !clientId.trim() || clientId.length > 100 ||
+        typeof batchId !== "string" || !/^[a-zA-Z0-9-]{16,80}$/.test(batchId) ||
+        typeof subject !== "string" || !subject.trim() || subject.length > 150 || /[\r\n]/.test(subject) ||
+        typeof message !== "string" || !message.trim() || message.length > 5000) {
+      return res.status(400).json({ error: "Revisá el cliente, el asunto y el mensaje." });
+    }
+    try {
+      const cart = await lookupCart(email);
+      if (cart.status !== "active_cart") {
+        return res.status(409).json({ error: "El cliente ya no tiene un carrito activo." });
+      }
+      res.json(await callScript({ action: "cart-mail", clientId, batchId, email, subject: subject.trim(),
+        message: message.trim(), staffEmail: req.staffEmail }));
+    } catch (error) {
+      res.status(503).json({ error: error.message });
     }
   });
 }
+
+async function lookupCart(email) {
+  if (!process.env.SHOWROOM_CART_KEY) throw new Error("Falta configurar el acceso al showroom.");
+  try {
+    const response = await fetch("https://buddies.com.ar/showroom/dev/wp-json/buddies/v1/crm/cart-status", {
+      method: "POST", redirect: "error",
+      headers: { "Content-Type": "application/json", "X-Buddies-CRM-Cart-Key": process.env.SHOWROOM_CART_KEY },
+      body: JSON.stringify({ email }), signal: AbortSignal.timeout(12000),
+    });
+    if (!response.ok) throw new Error();
+    const result = await response.json();
+    if (!["active_cart", "no_active_cart", "account_not_found"].includes(result.status)) throw new Error();
+    const date = typeof result.lastConnection === "string" ? Date.parse(result.lastConnection) : NaN;
+    return { status: result.status, lastConnection: Number.isFinite(date) ? new Date(date).toISOString() : null };
+  } catch {
+    throw new Error("No se pudo comprobar el carrito. Reintentá en unos minutos.");
+  }
+}
+
 module.exports = { registerCommunications };
