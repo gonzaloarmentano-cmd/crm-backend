@@ -14,7 +14,7 @@ Agregar el origen de producción del CRM y el origen de la vista previa usada pa
 
 ## BASE CRM
 
-Comparar apps-script/MailsCRM.gs con la versión actual del proyecto. Este archivo parte del script aportado el 17/11/2026. Integrar los cambios de enviarMailsDeudas y doPost en el mismo proyecto que ya contiene el envío. Mantener una única definición de cada función onOpen, doGet y doPost. Si el proyecto también contiene el actualizador de archivos, integrar sus rutas en el doPost existente.
+Comparar apps-script/MailsCRM.gs con la versión actual del proyecto. Este archivo parte del script aportado el 17/11/2026. Integrar `enviarMailsDeudas` y `crmCommunicationsDoPost_` en el proyecto que ya contiene el envío. Mantener una única definición de `onOpen`, `doGet` y `doPost`. En el `doPost` existente, delegar los sobres que incluyan `body`, `timestamp` y `signature` a `crmCommunicationsDoPost_(e)`, que valida la firma. Conservar las demás rutas y el comportamiento que usa el actualizador de archivos.
 
 Configurar CRM_MAIL_SCRIPT_KEY en Propiedades del script con el mismo secreto de Render. Inicializar SS_ID ejecutando Configurar tracking desde BASE CRM. Publicar una nueva versión de la aplicación web que ejecute como la cuenta remitente. La ruta de envío exige firma HMAC, timestamp reciente y un ID de lote. Las credenciales se conservan fuera del frontend y del repositorio.
 
@@ -22,8 +22,8 @@ El envío masivo del CRM requiere un saldo superior a $10.000 y email válido. E
 
 ## Showroom
 
-El backend usa la consulta privada existente /buddies/v1/crm/cart-status por email exacto. La última conexión aparece únicamente si la respuesta proporciona lastConnection. El endpoint existente todavía requiere ampliación para devolver ese dato. El envío de recuperación de carrito y su plantilla siguen pendientes.
+El backend usa la consulta privada existente /buddies/v1/crm/cart-status por email exacto. La última conexión aparece únicamente si la respuesta proporciona lastConnection. El fragmento 211 todavía requiere ampliación para devolver ese dato como fecha ISO 8601 o `null`. El envío de recuperación vuelve a comprobar el carrito y verifica en GRAL que el email siga perteneciendo al ID del cliente. Usa una plantilla editable o un mensaje nuevo y registra el resultado en Envios CRM.
 
 ## Verificación antes de producción
 
-Configurar los servicios y publicar ambos cambios coordinadamente. Probar con una cuenta autorizada, una no autorizada y un cliente de prueba con email propio. Verificar el destinatario, el saldo de GRAL y la fecha registrada en Aperturas. Confirmar que un reintento con el mismo ID de solicitud conserva un único envío. Verificar un email con carrito y otro sin carrito en el showroom. La compilación y las pruebas locales usan servicios simulados y no comprueban la entrega real.
+Configurar los servicios y publicar ambos cambios coordinadamente. Antes de los envíos de prueba, configurar `CRM_MAIL_TEST_RECIPIENT` en Apps Script con `gonzaloarmentano@buddies.com.ar`. La propiedad impide el envío masivo y limita los envíos del CRM a esa dirección. Probar con una cuenta autorizada, una no autorizada y una ficha de prueba que tenga ese email. Retirar la propiedad después de verificar la entrega y los registros. Verificar el destinatario, el saldo de GRAL y la fecha registrada en Aperturas. Confirmar que un reintento con el mismo ID de solicitud conserva un único envío. Verificar un email con carrito y otro sin carrito en el showroom. La compilación y las pruebas locales usan servicios simulados y no comprueban la entrega real.
