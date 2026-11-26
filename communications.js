@@ -57,17 +57,30 @@ function registerCommunications(app) {
     }
   });
 
+  app.post("/comunicaciones/deudas/vista-previa", authorize, async (req, res) => {
+    const { clientId } = req.body || {};
+    if (clientId !== undefined && (typeof clientId !== "string" || !clientId.trim() || clientId.length > 100)) {
+      return res.status(400).json({ error: "El cliente no es válido." });
+    }
+    try {
+      res.json(await callScript({ action: "preview", clientId }));
+    } catch (error) {
+      res.status(503).json({ error: error.message });
+    }
+  });
+
   app.post("/comunicaciones/deudas", authorize, async (req, res) => {
-    const { clientId, batchId, cursor = 1 } = req.body || {};
+    const { clientId, batchId, fingerprint, cursor = 1 } = req.body || {};
     if (clientId !== undefined && (typeof clientId !== "string" || !clientId.trim() || clientId.length > 100)) {
       return res.status(400).json({ error: "El cliente no es válido." });
     }
     if (typeof batchId !== "string" || !/^[a-zA-Z0-9-]{16,80}$/.test(batchId) ||
+        typeof fingerprint !== "string" || !/^[a-f0-9]{64}$/.test(fingerprint) ||
         !Number.isInteger(cursor) || cursor < 1) {
       return res.status(400).json({ error: "El envío no tiene una identificación válida." });
     }
     try {
-      res.json(await callScript({ action: "send", clientId, batchId, cursor, staffEmail: req.staffEmail }));
+      res.json(await callScript({ action: "send", clientId, batchId, fingerprint, cursor, staffEmail: req.staffEmail }));
     } catch (error) {
       res.status(503).json({ error: error.message + " Podés reintentar el mismo envío." });
     }
@@ -85,27 +98,7 @@ function registerCommunications(app) {
     }
   });
 
-  app.post("/comunicaciones/showroom/mail", authorize, async (req, res) => {
-    const { clientId, batchId, subject, message } = req.body || {};
-    const email = typeof req.body?.email === "string" ? req.body.email.trim().toLowerCase() : "";
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || email.length > 254 ||
-        typeof clientId !== "string" || !clientId.trim() || clientId.length > 100 ||
-        typeof batchId !== "string" || !/^[a-zA-Z0-9-]{16,80}$/.test(batchId) ||
-        typeof subject !== "string" || !subject.trim() || subject.length > 150 || /[\r\n]/.test(subject) ||
-        typeof message !== "string" || !message.trim() || message.length > 5000) {
-      return res.status(400).json({ error: "Revisá el cliente, el asunto y el mensaje." });
-    }
-    try {
-      const cart = await lookupCart(email);
-      if (cart.status !== "active_cart") {
-        return res.status(409).json({ error: "El cliente ya no tiene un carrito activo." });
-      }
-      res.json(await callScript({ action: "cart-mail", clientId, batchId, email, subject: subject.trim(),
-        message: message.trim(), staffEmail: req.staffEmail }));
-    } catch (error) {
-      res.status(503).json({ error: error.message });
-    }
-  });
+
 }
 
 async function lookupCart(email) {
